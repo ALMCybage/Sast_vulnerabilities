@@ -1,6 +1,7 @@
 from flask import Flask, request
 import sqlite3
 import os
+import subprocess
 
 app = Flask(__name__)
 
@@ -37,6 +38,27 @@ def echo():
 
     # Reflected XSS
     return f"<html><body><h1>{message}</h1></body></html>"
+
+
+@app.route("/file")
+def file_read():
+
+    filename = request.args.get("name", "")
+
+    # Path Traversal
+    with open(filename, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+@app.route("/run")
+def run():
+
+    command = request.args.get("cmd", "")
+
+    # Command Injection (shell=True)
+    output = subprocess.check_output(command, shell=True, text=True)
+
+    return output
 
 
 if __name__ == "__main__":

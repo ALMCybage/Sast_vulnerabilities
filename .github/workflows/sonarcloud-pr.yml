@@ -69,7 +69,7 @@ jobs:
           measures = call(
               "/api/measures/component?component=" + project
               + "&pullRequest=" + pr
-              + "&metricKeys=alert_status,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_coverage,new_duplicated_lines_density"
+              + "&metricKeys=alert_status,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_coverage,new_duplicated_lines_density,new_duplicated_lines"
           )
           issues = call(
               "/api/issues/search?componentKeys=" + project
@@ -82,6 +82,12 @@ jobs:
               + "&pullRequest=" + pr
               + "&types=BUG,VULNERABILITY,CODE_SMELL"
               + "&facets=types&ps=1"
+          )
+          severity_counts = call(
+              "/api/issues/search?componentKeys=" + project
+              + "&pullRequest=" + pr
+              + "&types=BUG,VULNERABILITY,CODE_SMELL"
+              + "&facets=severities&ps=1"
           )
 
           metrics = {m["metric"]: m.get("value", "-") for m in measures.get("component", {}).get("measures", [])}
@@ -97,8 +103,17 @@ jobs:
                       if key in type_counts:
                           type_counts[key] = str(val.get("count", 0))
 
+          severity_totals = {"BLOCKER": "0", "CRITICAL": "0", "MAJOR": "0"}
+          for facet in severity_counts.get("facets", []):
+              if facet.get("property") == "severities":
+                  for val in facet.get("values", []):
+                      key = val.get("val")
+                      if key in severity_totals:
+                          severity_totals[key] = str(val.get("count", 0))
+
           new_coverage = metrics.get("new_coverage")
           new_duplication = metrics.get("new_duplicated_lines_density")
+          new_duplicated_lines = metrics.get("new_duplicated_lines", "0")
           new_hotspots = metrics.get("new_security_hotspots", "0")
 
           lines = []
@@ -110,7 +125,9 @@ jobs:
           lines.append(f"- New Vulnerabilities: **{type_counts['VULNERABILITY']}**")
           lines.append(f"- New Code Smells: **{type_counts['CODE_SMELL']}**")
           lines.append(f"- New Security Hotspots: **{new_hotspots}**")
+          lines.append(f"- Severity Totals (BLOCKER/CRITICAL/MAJOR): **{severity_totals['BLOCKER']}/{severity_totals['CRITICAL']}/{severity_totals['MAJOR']}**")
           lines.append(f"- New Coverage: **{new_coverage + '%' if new_coverage is not None else 'N/A'}**")
+          lines.append(f"- New Duplicated Lines: **{new_duplicated_lines}**")
           lines.append(f"- New Duplication: **{new_duplication + '%' if new_duplication is not None else 'N/A'}**")
           lines.append("")
           lines.append(f"Total new issues in PR: **{total}**")
