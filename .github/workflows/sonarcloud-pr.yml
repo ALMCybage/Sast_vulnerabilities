@@ -50,71 +50,138 @@ jobs:
           python - << 'PY'
           import json
           import os
+          import time
+          import urllib.parse
           import urllib.request
+          import base64
 
           host = os.environ["SONAR_HOST_URL"]
           project = os.environ["SONAR_PROJECT_KEY"]
           pr = os.environ["PR_NUMBER"]
           token = os.environ["SONAR_TOKEN"]
+          dashboard_url = f"{host}/dashboard?id={project}&pullRequest={pr}"
 
-          def call(path):
-              url = f"{host}{path}"
+          report_task_file = ".scannerwork/report-task.txt"
+          ce_task_id = None
+          if os.path.exists(report_task_file):
+            values = {}
+            with open(report_task_file, "r", encoding="utf-8") as f:
+              for line in f:
+                if "=" in line:
+                  k, v = line.strip().split("=", 1)
+                  values[k] = v
+            ce_task_id = values.get("ceTaskId")
+            host = values.get("serverUrl", host)
+            project = values.get("projectKey", project)
+            dashboard_url = values.get("dashboardUrl", dashboard_url)
+
+          def call(path, params=None):
+            query = ""
+            if params:
+              query = "?" + urllib.parse.urlencode(params, safe=",")
+            url = f"{host}{path}{query}"
               req = urllib.request.Request(url)
               auth = (token + ":").encode("utf-8")
-              import base64
               req.add_header("Authorization", "Basic " + base64.b64encode(auth).decode("utf-8"))
               with urllib.request.urlopen(req, timeout=30) as resp:
                   return json.loads(resp.read().decode("utf-8"))
 
-          measures = call(
-              "/api/measures/component?component=" + project
-              + "&pullRequest=" + pr
-              + "&metricKeys=alert_status,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_coverage,new_duplicated_lines_density,new_duplicated_lines"
-          )
-          issues = call(
-              "/api/issues/search?componentKeys=" + project
-              + "&pullRequest=" + pr
-              + "&types=BUG,VULNERABILITY,CODE_SMELL"
-              + "&ps=5&s=SEVERITY"
-          )
-          issue_counts = call(
-              "/api/issues/search?componentKeys=" + project
-              + "&pullRequest=" + pr
-              + "&types=BUG,VULNERABILITY,CODE_SMELL"
-              + "&facets=types&ps=1"
-          )
-          severity_counts = call(
-              "/api/issues/search?componentKeys=" + project
-              + "&pullRequest=" + pr
-              + "&types=BUG,VULNERABILITY,CODE_SMELL"
-              + "&facets=severities&ps=1"
-          )
+          if ce_task_id:
+            for _ in range(40):
+              ce = call("/api/ce/task", {"id": ce_task_id})
+              status = ce.get("task", {}).get("status")
+              if status in ("SUCCESS", "FAILED", "CANCELED"):
+                break
+              time.sleep(3)
 
-          metrics = {m["metric"]: m.get("value", "-") for m in measures.get("component", {}).get("measures", [])}
-          quality = metrics.get("alert_status", "UNKNOWN")
-          total = issues.get("total", 0)
-          top_issues = issues.get("issues", [])
-
+          metrics = {}
+          quality = "UNKNOWN"
+          total = 0
+          top_issues = []
           type_counts = {"BUG": "0", "VULNERABILITY": "0", "CODE_SMELL": "0"}
-          for facet in issue_counts.get("facets", []):
-              if facet.get("property") == "types":
-                  for val in facet.get("values", []):
-                      key = val.get("val")
-                      if key in type_counts:
-                          type_counts[key] = str(val.get("count", 0))
-
           severity_totals = {"BLOCKER": "0", "CRITICAL": "0", "MAJOR": "0"}
-          for facet in severity_counts.get("facets", []):
-              if facet.get("property") == "severities":
-                  for val in facet.get("values", []):
-                      key = val.get("val")
-                      if key in severity_totals:
-                          severity_totals[key] = str(val.get("count", 0))
+          new_coverage = None
+          new_duplication = None
+          new_duplicated_lines = "0"
+          new_hotspots = "0"
 
-          new_coverage = metrics.get("new_coverage")
-          new_duplication = metrics.get("new_duplicated_lines_density")
-          new_duplicated_lines = metrics.get("new_duplicated_lines", "0")
-          new_hotspots = metrics.get("new_security_hotspots", "0")
+          for attempt in range(10):
+            measures = call(
+              "/api/measures/component",
+              {
+                "component": project,
+                "pullRequest": pr,
+                "metricKeys": "alert_status,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_coverage,new_duplicated_lines_density,new_duplicated_lines",
+              },
+            )
+            issues = call(
+              "/api/issues/search",
+              {
+                "componentKeys": project,
+                "pullRequest": pr,
+                "types": "BUG,VULNERABILITY,CODE_SMELL",
+                "ps": "5",
+                "s": "SEVERITY",
+              },
+            )
+            issue_counts = call(
+              "/api/issues/search",
+              {
+                "componentKeys": project,
+                "pullRequest": pr,
+                "types": "BUG,VULNERABILITY,CODE_SMELL",
+                "facets": "types",
+                "ps": "1",
+              },
+            )
+            severity_counts = call(
+              "/api/issues/search",
+              {
+                "componentKeys": project,
+                "pullRequest": pr,
+                "types": "BUG,VULNERABILITY,CODE_SMELL",
+                "facets": "severities",
+                "ps": "1",
+              },
+            )
+            quality_gate = call(
+              "/api/qualitygates/project_status",
+              {
+                "projectKey": project,
+                "pullRequest": pr,
+              },
+            )
+
+            metrics = {m["metric"]: m.get("value", "-") for m in measures.get("component", {}).get("measures", [])}
+            quality = quality_gate.get("projectStatus", {}).get("status") or metrics.get("alert_status", "UNKNOWN")
+            total = issues.get("total", 0)
+            top_issues = issues.get("issues", [])
+
+            type_counts = {"BUG": "0", "VULNERABILITY": "0", "CODE_SMELL": "0"}
+            for facet in issue_counts.get("facets", []):
+              if facet.get("property") == "types":
+                for val in facet.get("values", []):
+                  key = val.get("val")
+                  if key in type_counts:
+                    type_counts[key] = str(val.get("count", 0))
+
+            severity_totals = {"BLOCKER": "0", "CRITICAL": "0", "MAJOR": "0"}
+            for facet in severity_counts.get("facets", []):
+              if facet.get("property") == "severities":
+                for val in facet.get("values", []):
+                  key = val.get("val")
+                  if key in severity_totals:
+                    severity_totals[key] = str(val.get("count", 0))
+
+            new_coverage = metrics.get("new_coverage")
+            new_duplication = metrics.get("new_duplicated_lines_density")
+            new_duplicated_lines = metrics.get("new_duplicated_lines", "0")
+            new_hotspots = metrics.get("new_security_hotspots", "0")
+
+            if quality != "UNKNOWN" or total > 0:
+              break
+            if attempt < 9:
+              time.sleep(5)
 
           lines = []
           lines.append("<!-- sonar-pr-decoration -->")
@@ -143,7 +210,7 @@ jobs:
                   lines.append(f"- [{typ}/{sev}] {msg} (`{rule}`)")
 
           lines.append("")
-          lines.append(f"[Open full SonarCloud PR dashboard]({host}/dashboard?id={project}&pullRequest={pr})")
+          lines.append(f"[Open full SonarCloud PR dashboard]({dashboard_url})")
 
           with open("sonar_pr_comment.md", "w", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
