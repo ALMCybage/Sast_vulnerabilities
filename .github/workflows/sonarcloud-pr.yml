@@ -39,3 +39,113 @@ jobs:
             -Dsonar.pullrequest.base=${{ github.base_ref }}
             -Dsonar.scm.revision=${{ github.event.pull_request.head.sha }}
             -Dsonar.pullrequest.github.summary_comment=true
+
+      - name: Build SonarCloud PR decoration comment
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_KEY: almcybage_sast
+          SONAR_HOST_URL: https://sonarcloud.io
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - << 'PY'
+          import json
+          import os
+          import urllib.request
+
+          host = os.environ["SONAR_HOST_URL"]
+          project = os.environ["SONAR_PROJECT_KEY"]
+          pr = os.environ["PR_NUMBER"]
+          token = os.environ["SONAR_TOKEN"]
+
+          def call(path):
+              url = f"{host}{path}"
+              req = urllib.request.Request(url)
+              auth = (token + ":").encode("utf-8")
+              import base64
+              req.add_header("Authorization", "Basic " + base64.b64encode(auth).decode("utf-8"))
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  return json.loads(resp.read().decode("utf-8"))
+
+          measures = call(
+              "/api/measures/component?component=" + project
+              + "&pullRequest=" + pr
+              + "&metricKeys=alert_status,new_bugs,new_vulnerabilities,new_code_smells,new_security_hotspots,new_coverage,new_duplicated_lines_density"
+          )
+          issues = call(
+              "/api/issues/search?componentKeys=" + project
+              + "&pullRequest=" + pr
+              + "&types=BUG,VULNERABILITY,CODE_SMELL"
+              + "&ps=5&s=SEVERITY"
+          )
+
+          metrics = {m["metric"]: m.get("value", "-") for m in measures.get("component", {}).get("measures", [])}
+          quality = metrics.get("alert_status", "UNKNOWN")
+          total = issues.get("total", 0)
+          top_issues = issues.get("issues", [])
+
+          lines = []
+          lines.append("<!-- sonar-pr-decoration -->")
+          lines.append("## SonarCloud PR Analysis")
+          lines.append("")
+          lines.append(f"- Quality Gate: **{quality}**")
+          lines.append(f"- New Bugs: **{metrics.get('new_bugs', '0')}**")
+          lines.append(f"- New Vulnerabilities: **{metrics.get('new_vulnerabilities', '0')}**")
+          lines.append(f"- New Code Smells: **{metrics.get('new_code_smells', '0')}**")
+          lines.append(f"- New Security Hotspots: **{metrics.get('new_security_hotspots', '0')}**")
+          lines.append(f"- New Coverage: **{metrics.get('new_coverage', '-')}%**")
+          lines.append(f"- New Duplication: **{metrics.get('new_duplicated_lines_density', '-')}%**")
+          lines.append("")
+          lines.append(f"Total new issues in PR: **{total}**")
+
+          if top_issues:
+              lines.append("")
+              lines.append("### Top Sonar Issues")
+              for item in top_issues:
+                  rule = item.get("rule", "unknown")
+                  sev = item.get("severity", "-")
+                  typ = item.get("type", "-")
+                  msg = item.get("message", "").replace("\n", " ")
+                  lines.append(f"- [{typ}/{sev}] {msg} (`{rule}`)")
+
+          lines.append("")
+          lines.append(f"[Open full SonarCloud PR dashboard]({host}/dashboard?id={project}&pullRequest={pr})")
+
+          with open("sonar_pr_comment.md", "w", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+          PY
+
+      - name: Publish SonarCloud PR decoration comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- sonar-pr-decoration -->';
+            const body = fs.readFileSync('sonar_pr_comment.md', 'utf8');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
