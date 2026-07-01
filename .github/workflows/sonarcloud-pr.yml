@@ -1,0 +1,39 @@
+name: SonarCloud PR Scan
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sonarcloud:
+    name: Analyze PR with SonarCloud
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SonarCloud configuration
+        run: |
+          test -n "${{ secrets.SONAR_TOKEN }}" || (echo "Missing required secret: SONAR_TOKEN" && exit 1)
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=almcybage
+            -Dsonar.projectKey=almcybage_sast
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.head_ref }}
+            -Dsonar.pullrequest.base=${{ github.base_ref }}
+            -Dsonar.scm.revision=${{ github.event.pull_request.head.sha }}
