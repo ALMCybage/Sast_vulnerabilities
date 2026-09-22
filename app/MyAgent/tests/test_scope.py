@@ -48,3 +48,4 @@ def test_allows_security_prompt():
     )
     allowed, _ = is_in_scope(data)
     assert allowed
+#Changes1
