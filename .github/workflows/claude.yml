@@ -60,6 +60,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          base_branch: F4/generic
 
           claude_args: |
             --model claude-haiku-4-5
