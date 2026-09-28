@@ -3,17 +3,21 @@ name: Claude Code
 on:
   workflow_dispatch:
 
+  # @claude commands on Issues
   issue_comment:
     types: [created]
 
+  # @claude commands on PR comments
   pull_request_review_comment:
     types: [created]
 
-  issues:
-    types: [opened, assigned]
-
+  # PR review / Request changes
   pull_request_review:
     types: [submitted]
+
+  # Issue creation / assignment
+  issues:
+    types: [opened, assigned]
 
 permissions:
   contents: write
@@ -24,6 +28,24 @@ permissions:
 
 jobs:
   claude:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request == null &&
+       contains(github.event.comment.body, '@claude')) ||
+
+      (github.event_name == 'pull_request_review_comment' &&
+       contains(github.event.comment.body, '@claude')) ||
+
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'changes_requested' &&
+       contains(github.event.review.body, '@claude')) ||
+
+      (github.event_name == 'issues' &&
+       (contains(github.event.issue.body, '@claude') ||
+        contains(github.event.issue.title, '@claude')))
+
     runs-on: ubuntu-latest
 
     steps:
@@ -31,27 +53,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}   # ← add this
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # ← Set authenticated remote URL
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
 
       - name: Run Claude Code
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-haiku-4-5
           additional_permissions: |
             actions: read
 
-      - name: Commit and Push New Branch
+      - name: Commit and Push Branch
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}   # ← add this
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           echo "Current branch: $BRANCH"
