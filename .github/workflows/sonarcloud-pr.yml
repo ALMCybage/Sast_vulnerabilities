@@ -1,4 +1,4 @@
-name: SonarCloud PR Scan
+name: SonarCloud PR Scan #s
 
 on:
   pull_request:
