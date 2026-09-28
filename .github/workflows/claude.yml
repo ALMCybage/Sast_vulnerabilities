@@ -3,19 +3,15 @@ name: Claude Code
 on:
   workflow_dispatch:
 
-  # @claude commands on Issues
   issue_comment:
     types: [created]
 
-  # @claude commands on PR comments
   pull_request_review_comment:
     types: [created]
 
-  # PR review / Request changes
   pull_request_review:
     types: [submitted]
 
-  # Issue creation / assignment
   issues:
     types: [opened, assigned]
 
@@ -53,41 +49,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Debug Git Status Before Claude
-        run: |
-          echo "=== Current Branch ==="
-          git branch
-          echo "=== Remote Branches ==="
-          git branch -r
-          echo "=== Git Log ==="
-          git log --oneline -10
-
-      - name: Check key
-        run: |
-          echo "length: ${#KEY}"
-          curl -s -o /dev/null -w "%{http_code}\n" \
-            https://api.anthropic.com/v1/models \
-            -H "x-api-key: $KEY" \
-            -H "anthropic-version: 2023-06-01"
-        env:
-          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@v1
-        env:
-          DEBUG: true
+        uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          show_full_output: true
-          claude_args: |
-            --model claude-haiku-4-5
-
-      - name: Debug Git Status After Claude
-        if: always()
-        run: |
-          echo "=== Branches After Claude ==="
-          git branch -a
-          echo "=== Git Log After ==="
-          git log --oneline -10
-          echo "=== Git Status ==="
-          git status
+          model: claude-haiku-4-5
