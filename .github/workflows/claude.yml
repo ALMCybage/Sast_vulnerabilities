@@ -72,7 +72,7 @@ jobs:
       - name: Commit and Push Branch
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           # Check if repo has any commits at all
           if ! git rev-parse HEAD > /dev/null 2>&1; then
