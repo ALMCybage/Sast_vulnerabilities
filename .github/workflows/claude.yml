@@ -13,9 +13,9 @@ on:
 
 permissions:
   contents: write
-  id-token: write
   pull-requests: write
   issues: write
+  id-token: write
   actions: read
 
 jobs:
@@ -23,17 +23,14 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request == null &&
        contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' &&
        contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' &&
-       github.event.review.state == 'changes_requested' &&
        contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' &&
        (contains(github.event.issue.body, '@claude') ||
         contains(github.event.issue.title, '@claude')))
-
     runs-on: ubuntu-latest
 
     steps:
@@ -41,47 +38,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GIT }}
-          persist-credentials: true
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://${{ secrets.GIT }}@github.com/${{ github.repository }}.git
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-haiku-4-5
-          github_token: ${{ secrets.GIT }}
-          mode: agent
           additional_permissions: |
             actions: read
-
-      - name: Commit and Push Branch
-        if: always()
-        env:
-          GIT_TOKEN: ${{ secrets.GIT }}
-        run: |
-          if ! git rev-parse HEAD > /dev/null 2>&1; then
-            echo "⚠️ Empty repo — skipping commit"
-            exit 0
-          fi
-
-          # Reset remote URL with token right before push
-          git remote set-url origin https://${{ secrets.GIT }}@github.com/${{ github.repository }}.git
-
-          BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          echo "Current branch: $BRANCH"
-
-          if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-            echo "Changes detected, committing..."
-            git add -A
-            git commit -m "Claude: auto-commit changes on $BRANCH"
-            git push origin "$BRANCH"
-            echo "✅ Committed and pushed to $BRANCH"
-          else
-            echo "No changes to commit"
-          fi
+          claude_args: |
+            --model claude-sonnet-4-6
