@@ -30,5 +30,14 @@ def cmd():
     return "Executed"
 
 
+@app.route("/echo")
+def echo():
+
+    message = request.args.get("q", "")
+
+    # Reflected XSS
+    return f"<html><body><h1>{message}</h1></body></html>"
+
+
 if __name__ == "__main__":
     app.run()
