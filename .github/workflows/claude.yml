@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}   # ← add this
+          token: ${{ secrets.GH_PAT }}   # ← add this
 
       - name: Configure Git
         run: |
