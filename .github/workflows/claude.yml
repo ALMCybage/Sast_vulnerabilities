@@ -56,6 +56,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           model: claude-haiku-4-5
           github_token: ${{ secrets.GIT }}
+          mode: agent
           additional_permissions: |
             actions: read
 
