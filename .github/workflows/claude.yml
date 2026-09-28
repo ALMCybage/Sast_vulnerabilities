@@ -51,7 +51,7 @@ jobs:
       - name: Commit and Push New Branch
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # ← add this
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}   # ← add this
         run: |
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           echo "Current branch: $BRANCH"
