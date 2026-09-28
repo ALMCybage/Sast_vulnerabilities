@@ -1,15 +1,13 @@
 name: Claude Code
 
 on:
-  workflow_dispatch:
+  issues:
+    types: [opened, assigned, labeled]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  pull_request_review:
-    types: [submitted]
-  issues:
-    types: [opened, assigned]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,15 +20,15 @@ jobs:
   claude:
     if: |
       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && (
+        contains(github.event.issue.body, '@claude') ||
+        contains(github.event.issue.title, '@claude') ||
+        github.event.assignee.login == 'claude' ||
+        github.event.label.name == 'claude')) ||
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' &&
-       contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' &&
-       contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' &&
-       (contains(github.event.issue.body, '@claude') ||
-        contains(github.event.issue.title, '@claude')))
+       contains(github.event.comment.body, '@claude'))
     runs-on: ubuntu-latest
 
     steps:
@@ -43,7 +41,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          assignee_trigger: "claude"
+          label_trigger: "claude"
           additional_permissions: |
             actions: read
           claude_args: |
             --model claude-sonnet-4-6
+            --append-system-prompt "You are already on a new branch created from main, so all of main's files are present. Do exactly what the issue asks (for example, create the requested HTML file). Then commit it and push with the provided push script so the branch appears on GitHub. If no file changes are needed, run 'git commit --allow-empty -m \"Create branch for issue\"' and push. Finish by including the Create a PR link in your comment."
