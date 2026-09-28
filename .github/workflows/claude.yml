@@ -63,12 +63,15 @@ jobs:
       - name: Commit and Push Branch
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GIT }}
+          GIT_TOKEN: ${{ secrets.GIT }}
         run: |
           if ! git rev-parse HEAD > /dev/null 2>&1; then
             echo "⚠️ Empty repo — skipping commit"
             exit 0
           fi
+
+          # Reset remote URL with token right before push
+          git remote set-url origin https://${{ secrets.GIT }}@github.com/${{ github.repository }}.git
 
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           echo "Current branch: $BRANCH"
