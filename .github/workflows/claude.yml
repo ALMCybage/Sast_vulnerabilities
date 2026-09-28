@@ -72,12 +72,18 @@ jobs:
       - name: Commit and Push Branch
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Check if repo has any commits at all
+          if ! git rev-parse HEAD > /dev/null 2>&1; then
+            echo "⚠️ Repository is empty or HEAD does not exist yet — skipping commit"
+            exit 0
+          fi
+
           BRANCH=$(git rev-parse --abbrev-ref HEAD)
           echo "Current branch: $BRANCH"
 
-          if [ -n "$(git status --porcelain)" ]; then
+          if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
             echo "Changes detected, committing..."
             git add -A
             git commit -m "Claude: auto-commit changes on $BRANCH"
